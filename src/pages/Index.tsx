@@ -17,12 +17,21 @@ const Index = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [estimatedTime, setEstimatedTime] = useState(0);
   const [remainingTime, setRemainingTime] = useState(0);
+  const [musicFile, setMusicFile] = useState<File | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string>('');
+  const [gallery, setGallery] = useState<Array<{id: string, url: string, title: string, date: string}>>([]);
   const { toast } = useToast();
 
   useEffect(() => {
+    const savedGallery = localStorage.getItem('videoGallery');
+    if (savedGallery) {
+      setGallery(JSON.parse(savedGallery));
+    }
+
     const savedState = localStorage.getItem('videoGeneration');
     if (savedState) {
-      const { isGenerating: savedIsGenerating, estimatedTime: savedEstimatedTime, endTime } = JSON.parse(savedState);
+      const { isGenerating: savedIsGenerating, estimatedTime: savedEstimatedTime, endTime, musicFileName } = JSON.parse(savedState);
       if (savedIsGenerating && endTime) {
         const now = Date.now();
         const remainingMs = endTime - now;
@@ -32,9 +41,12 @@ const Index = () => {
           setRemainingTime(Math.ceil(remainingMs / 1000));
           toast({
             title: 'Генерация продолжается',
-            description: 'Ваше видео всё ещё создаётся',
+            description: musicFileName ? `С музыкой: ${musicFileName}` : 'Ваше видео всё ещё создаётся',
           });
         } else {
+          const mockVideoUrl = 'https://cdn.poehali.dev/placeholder.svg';
+          setGeneratedVideoUrl(mockVideoUrl);
+          setVideoReady(true);
           localStorage.removeItem('videoGeneration');
           toast({
             title: 'Видео готово!',
@@ -52,6 +64,9 @@ const Index = () => {
         setRemainingTime((prev) => {
           if (prev <= 1) {
             setIsGenerating(false);
+            const mockVideoUrl = 'https://cdn.poehali.dev/placeholder.svg';
+            setGeneratedVideoUrl(mockVideoUrl);
+            setVideoReady(true);
             localStorage.removeItem('videoGeneration');
             toast({
               title: 'Видео готово!',
@@ -73,7 +88,8 @@ const Index = () => {
         isGenerating: true,
         estimatedTime,
         remainingTime,
-        endTime
+        endTime,
+        musicFileName: musicFile?.name || null
       }));
     }
   }, [isGenerating, remainingTime, estimatedTime]);
@@ -105,16 +121,87 @@ const Index = () => {
     setRemainingTime(estimated);
     setIsGenerating(true);
     
+    setVideoReady(false);
+    setGeneratedVideoUrl('');
+    
     localStorage.setItem('videoGeneration', JSON.stringify({
       isGenerating: true,
       estimatedTime: estimated,
       remainingTime: estimated,
-      endTime
+      endTime,
+      musicFileName: musicFile?.name || null
     }));
     
     toast({
       title: 'Генерация началась!',
-      description: `Примерное время: ${Math.floor(estimated / 60)}м ${estimated % 60}с`,
+      description: musicFile 
+        ? `С музыкой ${musicFile.name}. Время: ${Math.floor(estimated / 60)}м ${estimated % 60}с`
+        : `Примерное время: ${Math.floor(estimated / 60)}м ${estimated % 60}с`,
+    });
+  };
+
+  const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type.startsWith('audio/')) {
+        setMusicFile(file);
+        toast({
+          title: 'Музыка загружена',
+          description: `${file.name} будет добавлена к видео`,
+        });
+      } else {
+        toast({
+          title: 'Ошибка',
+          description: 'Выберите аудио файл',
+          variant: 'destructive',
+        });
+      }
+    }
+  };
+
+  const handleSaveToGallery = () => {
+    if (!generatedVideoUrl) return;
+    
+    const newVideo = {
+      id: Date.now().toString(),
+      url: generatedVideoUrl,
+      title: description.slice(0, 50) + (description.length > 50 ? '...' : ''),
+      date: new Date().toLocaleString('ru-RU')
+    };
+    
+    const updatedGallery = [newVideo, ...gallery];
+    setGallery(updatedGallery);
+    localStorage.setItem('videoGallery', JSON.stringify(updatedGallery));
+    
+    toast({
+      title: 'Сохранено!',
+      description: 'Видео добавлено в галерею',
+    });
+  };
+
+  const handleDownloadVideo = () => {
+    if (!generatedVideoUrl) return;
+    
+    const link = document.createElement('a');
+    link.href = generatedVideoUrl;
+    link.download = `video_${Date.now()}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: 'Скачивание началось',
+      description: 'Видео сохраняется на ваше устройство',
+    });
+  };
+
+  const handleDeleteFromGallery = (id: string) => {
+    const updatedGallery = gallery.filter(v => v.id !== id);
+    setGallery(updatedGallery);
+    localStorage.setItem('videoGallery', JSON.stringify(updatedGallery));
+    toast({
+      title: 'Удалено',
+      description: 'Видео удалено из галереи',
     });
   };
 
@@ -257,6 +344,45 @@ const Index = () => {
                     </p>
                   </div>
 
+                  <div>
+                    <Label htmlFor="music" className="text-base font-heading mb-2 block">
+                      Добавить музыку (опционально)
+                    </Label>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="glass border-secondary/30 hover:border-secondary relative"
+                        onClick={() => document.getElementById('music-upload')?.click()}
+                      >
+                        <Icon name="Music" size={18} className="mr-2" />
+                        {musicFile ? 'Изменить музыку' : 'Загрузить музыку'}
+                      </Button>
+                      <input
+                        id="music-upload"
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleMusicUpload}
+                        className="hidden"
+                      />
+                      {musicFile && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg glass border border-secondary/30">
+                          <Icon name="Music2" size={16} className="text-secondary" />
+                          <span className="text-sm">{musicFile.name}</span>
+                          <button
+                            onClick={() => setMusicFile(null)}
+                            className="ml-2 text-muted-foreground hover:text-foreground"
+                          >
+                            <Icon name="X" size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Видео будет синхронизировано с ритмом музыки
+                    </p>
+                  </div>
+
                   <div className="grid md:grid-cols-3 gap-4">
                     <div>
                       <Label htmlFor="duration" className="text-base font-heading mb-2 block">
@@ -339,6 +465,44 @@ const Index = () => {
                     </Card>
                   )}
 
+                  {videoReady && generatedVideoUrl && (
+                    <Card className="p-6 glass border-accent/50 bg-accent/5">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center neon-glow">
+                            <Icon name="CheckCircle2" size={24} className="text-accent" />
+                          </div>
+                          <div>
+                            <h4 className="font-heading font-semibold text-lg">Видео готово!</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Ваше видео успешно создано и готово к просмотру
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                          <Button
+                            size="lg"
+                            className="flex-1 font-heading neon-glow"
+                            onClick={handleDownloadVideo}
+                          >
+                            <Icon name="Download" size={20} className="mr-2" />
+                            Скачать видео
+                          </Button>
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            className="flex-1 font-heading glass border-secondary/50"
+                            onClick={handleSaveToGallery}
+                          >
+                            <Icon name="Save" size={20} className="mr-2" />
+                            В галерею
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
                   <div className="pt-4">
                     <Button
                       size="lg"
@@ -387,6 +551,55 @@ const Index = () => {
                   </div>
                 </Card>
               </div>
+
+              {gallery.length > 0 && (
+                <div className="mt-12">
+                  <h3 className="text-3xl font-heading font-bold mb-6 text-center neon-text">
+                    Галерея видео
+                  </h3>
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {gallery.map((video) => (
+                      <Card key={video.id} className="p-4 glass border-primary/30 hover:border-primary/60 transition-all group">
+                        <div className="space-y-3">
+                          <div className="aspect-video bg-muted rounded-lg flex items-center justify-center overflow-hidden">
+                            <Icon name="PlayCircle" size={48} className="text-primary group-hover:scale-110 transition-transform" />
+                          </div>
+                          <div>
+                            <h4 className="font-heading font-semibold text-sm mb-1 line-clamp-2">
+                              {video.title}
+                            </h4>
+                            <p className="text-xs text-muted-foreground">{video.date}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 glass border-secondary/30"
+                              onClick={() => {
+                                const link = document.createElement('a');
+                                link.href = video.url;
+                                link.download = `video_${video.id}.mp4`;
+                                link.click();
+                              }}
+                            >
+                              <Icon name="Download" size={14} className="mr-1" />
+                              Скачать
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="glass border-destructive/30 hover:bg-destructive/10"
+                              onClick={() => handleDeleteFromGallery(video.id)}
+                            >
+                              <Icon name="Trash2" size={14} />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
