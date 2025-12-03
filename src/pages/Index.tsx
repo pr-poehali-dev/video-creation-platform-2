@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,40 @@ const Index = () => {
   const [resolution, setResolution] = useState('1920x1080');
   const [format, setFormat] = useState('mp4');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [estimatedTime, setEstimatedTime] = useState(0);
+  const [remainingTime, setRemainingTime] = useState(0);
   const { toast } = useToast();
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isGenerating && remainingTime > 0) {
+      interval = setInterval(() => {
+        setRemainingTime((prev) => {
+          if (prev <= 1) {
+            setIsGenerating(false);
+            toast({
+              title: 'Видео готово!',
+              description: 'Ваше видео успешно создано и готово к скачиванию',
+            });
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isGenerating, remainingTime, toast]);
+
+  const calculateEstimatedTime = (videoDuration: string, videoResolution: string) => {
+    const durationSeconds = parseInt(videoDuration);
+    const baseTime = durationSeconds * 2;
+    
+    let multiplier = 1;
+    if (videoResolution === '1920x1080') multiplier = 1.5;
+    if (videoResolution === '3840x2160') multiplier = 2.5;
+    
+    return Math.round(baseTime * multiplier);
+  };
 
   const handleGenerate = () => {
     if (!description.trim()) {
@@ -27,14 +60,15 @@ const Index = () => {
       return;
     }
 
+    const estimated = calculateEstimatedTime(duration, resolution);
+    setEstimatedTime(estimated);
+    setRemainingTime(estimated);
     setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
-      toast({
-        title: 'Видео создаётся!',
-        description: `Генерация видео ${duration}с в ${resolution} началась`,
-      });
-    }, 2000);
+    
+    toast({
+      title: 'Генерация началась!',
+      description: `Примерное время: ${Math.floor(estimated / 60)}м ${estimated % 60}с`,
+    });
   };
 
   return (
@@ -228,6 +262,35 @@ const Index = () => {
                       </Select>
                     </div>
                   </div>
+
+                  {isGenerating && (
+                    <Card className="p-6 glass border-primary/50 bg-primary/5">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Icon name="Loader2" size={24} className="text-primary animate-spin" />
+                            <div>
+                              <h4 className="font-heading font-semibold text-lg">Создаём видео</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Осталось времени: {Math.floor(remainingTime / 60)}м {remainingTime % 60}с
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-3xl font-heading font-bold text-primary">
+                              {Math.round((1 - remainingTime / estimatedTime) * 100)}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-primary via-secondary to-accent transition-all duration-1000 ease-linear"
+                            style={{ width: `${(1 - remainingTime / estimatedTime) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    </Card>
+                  )}
 
                   <div className="pt-4">
                     <Button
