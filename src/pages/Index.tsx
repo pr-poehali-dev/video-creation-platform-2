@@ -20,12 +20,39 @@ const Index = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    const savedState = localStorage.getItem('videoGeneration');
+    if (savedState) {
+      const { isGenerating: savedIsGenerating, estimatedTime: savedEstimatedTime, endTime } = JSON.parse(savedState);
+      if (savedIsGenerating && endTime) {
+        const now = Date.now();
+        const remainingMs = endTime - now;
+        if (remainingMs > 0) {
+          setIsGenerating(true);
+          setEstimatedTime(savedEstimatedTime);
+          setRemainingTime(Math.ceil(remainingMs / 1000));
+          toast({
+            title: 'Генерация продолжается',
+            description: 'Ваше видео всё ещё создаётся',
+          });
+        } else {
+          localStorage.removeItem('videoGeneration');
+          toast({
+            title: 'Видео готово!',
+            description: 'Ваше видео было создано, пока вас не было',
+          });
+        }
+      }
+    }
+  }, [toast]);
+
+  useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isGenerating && remainingTime > 0) {
       interval = setInterval(() => {
         setRemainingTime((prev) => {
           if (prev <= 1) {
             setIsGenerating(false);
+            localStorage.removeItem('videoGeneration');
             toast({
               title: 'Видео готово!',
               description: 'Ваше видео успешно создано и готово к скачиванию',
@@ -38,6 +65,18 @@ const Index = () => {
     }
     return () => clearInterval(interval);
   }, [isGenerating, remainingTime, toast]);
+
+  useEffect(() => {
+    if (isGenerating && remainingTime > 0) {
+      const endTime = Date.now() + remainingTime * 1000;
+      localStorage.setItem('videoGeneration', JSON.stringify({
+        isGenerating: true,
+        estimatedTime,
+        remainingTime,
+        endTime
+      }));
+    }
+  }, [isGenerating, remainingTime, estimatedTime]);
 
   const calculateEstimatedTime = (videoDuration: string, videoResolution: string) => {
     const durationSeconds = parseInt(videoDuration);
@@ -61,9 +100,17 @@ const Index = () => {
     }
 
     const estimated = calculateEstimatedTime(duration, resolution);
+    const endTime = Date.now() + estimated * 1000;
     setEstimatedTime(estimated);
     setRemainingTime(estimated);
     setIsGenerating(true);
+    
+    localStorage.setItem('videoGeneration', JSON.stringify({
+      isGenerating: true,
+      estimatedTime: estimated,
+      remainingTime: estimated,
+      endTime
+    }));
     
     toast({
       title: 'Генерация началась!',
